@@ -95,21 +95,39 @@ html, body, [class*="css"] {
 }
 
 #MainMenu, footer { visibility: hidden; }
-header[data-testid="stHeader"] { background: transparent; }
+header[data-testid="stHeader"] {
+    background: transparent !important;
+    height: 2.2rem !important;
+}
 
-.block-container {
-    padding-top: 1.4rem;
-    padding-bottom: 2.5rem;
-    max-width: 1120px;
+.block-container,
+.stMainBlockContainer,
+[data-testid="stMainBlockContainer"],
+section.main .block-container {
+    max-width: 100% !important;
+    width: 100% !important;
+    padding-top: 0.75rem !important;
+    padding-left: 2rem !important;
+    padding-right: 2rem !important;
+    padding-bottom: 2.2rem !important;
+}
+@media (max-width: 768px) {
+    .block-container,
+    .stMainBlockContainer,
+    [data-testid="stMainBlockContainer"],
+    section.main .block-container {
+        padding-left: 0.9rem !important;
+        padding-right: 0.9rem !important;
+    }
 }
 
 /* Top Hero */
 .hero-card {
-    background: linear-gradient(135deg, #FFFFFF 0%, #F0FDFA 60%, #ECFEFF 100%);
+    background: linear-gradient(135deg, #FFFFFF 0%, #F0FDFA 55%, #ECFEFF 100%);
     border: 1px solid #CCFBF1;
-    border-radius: 20px;
-    padding: 1.9rem 2.2rem;
-    margin-bottom: 1.25rem;
+    border-radius: 18px;
+    padding: 1.5rem 2rem;
+    margin-bottom: 1rem;
     box-shadow: 0 4px 20px rgba(15, 118, 110, 0.06);
 }
 .hero-badge {
@@ -122,23 +140,23 @@ header[data-testid="stHeader"] { background: transparent; }
     font-weight: 700;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-    padding: 0.32rem 0.75rem;
+    padding: 0.3rem 0.75rem;
     border-radius: 999px;
-    margin-bottom: 0.75rem;
+    margin-bottom: 0.6rem;
 }
 .hero-title {
-    font-size: 2.15rem;
+    font-size: 2.1rem;
     font-weight: 800;
     color: #0F172A;
     letter-spacing: -0.025em;
     line-height: 1.15;
-    margin: 0 0 0.55rem 0;
+    margin: 0 0 0.45rem 0;
 }
 .hero-sub {
-    font-size: 1.03rem;
+    font-size: 1.02rem;
     color: #475569;
-    line-height: 1.58;
-    max-width: 780px;
+    line-height: 1.55;
+    max-width: 100%;
     margin: 0;
 }
 
@@ -187,24 +205,35 @@ header[data-testid="stHeader"] { background: transparent; }
 }
 
 /* Tabs */
-div[data-baseweb="tab-list"] {
+.stTabs [data-baseweb="tab-list"] {
     gap: 0.5rem;
     background: #F1F5F9;
     padding: 0.35rem;
     border-radius: 12px;
     margin-bottom: 1.1rem;
+    border-bottom: none !important;
 }
-button[data-baseweb="tab"] {
+.stTabs [data-baseweb="tab-highlight"] {
+    display: none !important;
+}
+.stTabs button[data-baseweb="tab"] {
     border-radius: 9px !important;
-    padding: 0.5rem 1.05rem !important;
+    padding: 0.5rem 1.15rem !important;
     font-weight: 600 !important;
     font-size: 0.93rem !important;
     color: #475569 !important;
 }
-button[data-baseweb="tab"][aria-selected="true"] {
+.stTabs button[data-baseweb="tab"][aria-selected="true"] {
     background: #FFFFFF !important;
     color: #0F766E !important;
     box-shadow: 0 1px 4px rgba(15, 23, 42, 0.08);
+}
+
+/* Uploader file list cleanliness for multi-file batches */
+[data-testid="stFileUploader"] ul {
+    max-height: 155px;
+    overflow-y: auto;
+    padding-top: 0.35rem;
 }
 
 /* Upload Zone */
@@ -701,63 +730,49 @@ def render_hero() -> None:
     )
 
 
+def build_gauge_svg(prob: float, css_cls: str) -> str:
+    """Build a crisp circular progress ring SVG for Parkinson likelihood."""
+    pct = max(0.0, min(100.0, prob * 100.0))
+    radius = 28
+    circumference = 2.0 * 3.14159265 * radius
+    dash = (pct / 100.0) * circumference
+    color_map = {"warn": "#D97706", "unsure": "#4F46E5", "ok": "#0F766E"}
+    stroke_color = color_map.get(css_cls, "#0F766E")
+    return f"""
+<svg width="72" height="72" viewBox="0 0 72 72" aria-label="{pct:.1f}% chance">
+  <circle cx="36" cy="36" r="{radius}" fill="none" stroke="#E2E8F0" stroke-width="7"/>
+  <circle cx="36" cy="36" r="{radius}" fill="none" stroke="{stroke_color}" stroke-width="7"
+          stroke-linecap="round" stroke-dasharray="{dash:.2f} {circumference:.2f}"
+          transform="rotate(-90 36 36)"/>
+  <text x="36" y="40" text-anchor="middle" font-family="JetBrains Mono, monospace"
+        font-size="13" font-weight="800" fill="#0F172A">{pct:.0f}%</text>
+</svg>"""
+
+
 def render_result_card(
     index: int,
     filename: str,
     img_pil: Image.Image,
     overlay_pil: Image.Image,
     prob: float,
+    compact: bool = False,
 ) -> None:
     """Render an individual, easy-to-read diagnostic card for one drawing."""
     info = interpret_probability(prob)
     safe_name = html.escape(filename)
     parkinson_pct = prob * 100.0
     healthy_pct = (1.0 - prob) * 100.0
+    gauge_svg = build_gauge_svg(prob, info["css"])
 
-    with st.container(border=True):
-        st.markdown(
-            f"""
-<div class="result-header">
-  <span class="file-chip">#{index} · {safe_name}</span>
-  <span class="status-badge {info['css']}">{info['badge']}</span>
-</div>
-""",
-            unsafe_allow_html=True,
-        )
-
-        col_imgs, col_details = st.columns([1.15, 1.0], gap="large")
-
-        with col_imgs:
-            c_orig, c_cam = st.columns(2, gap="small")
-            with c_orig:
-                st.caption("Original Drawing")
-                st.image(img_pil, use_container_width=True)
-            with c_cam:
-                st.caption("Where AI Focused (Grad-CAM)")
-                st.image(overlay_pil, use_container_width=True)
-
-            st.markdown(
-                f"""
-<div class="cam-legend">
-  <span>Low focus</span>
-  <div class="legend-bar"></div>
-  <span>Strongest cue</span>
-</div>
-<div style="font-size:0.84rem;color:#475569;margin-top:0.35rem;line-height:1.45;">
-  {info['cam_caption']}
-</div>
-""",
-                unsafe_allow_html=True,
-            )
-
-        with col_details:
-            st.markdown(
-                f"""
+    details_html = f"""
 <div class="chance-card {info['css']}">
   <div class="chance-top">
-    <div>
-      <div class="chance-label">Parkinson's Pattern Chance</div>
-      <div class="chance-big {info['css']}">{info['chance_text']}</div>
+    <div style="display:flex;align-items:center;gap:0.85rem;">
+      {gauge_svg}
+      <div>
+        <div class="chance-label">Parkinson's Pattern Chance</div>
+        <div class="chance-big {info['css']}">{info['chance_text']}</div>
+      </div>
     </div>
     <span class="risk-tag">{info['risk']}</span>
   </div>
@@ -780,9 +795,54 @@ def render_result_card(
   <b>What this means:</b> {info['meaning']}<br><br>
   <b>Suggested next step:</b> {info['next_step']}
 </div>
+"""
+
+    legend_html = f"""
+<div class="cam-legend">
+  <span>Low focus</span>
+  <div class="legend-bar"></div>
+  <span>Strongest cue</span>
+</div>
+<div style="font-size:0.84rem;color:#475569;margin-top:0.35rem;line-height:1.45;">
+  {info['cam_caption']}
+</div>
+"""
+
+    with st.container(border=True):
+        st.markdown(
+            f"""
+<div class="result-header">
+  <span class="file-chip">#{index} · {safe_name}</span>
+  <span class="status-badge {info['css']}">{info['badge']}</span>
+</div>
 """,
-                unsafe_allow_html=True,
-            )
+            unsafe_allow_html=True,
+        )
+
+        if compact:
+            c_orig, c_cam = st.columns(2, gap="small")
+            with c_orig:
+                st.caption("Original Drawing")
+                st.image(img_pil, use_container_width=True)
+            with c_cam:
+                st.caption("Where AI Focused (Grad-CAM)")
+                st.image(overlay_pil, use_container_width=True)
+            st.markdown(legend_html, unsafe_allow_html=True)
+            st.markdown("<div style='height:0.55rem'></div>", unsafe_allow_html=True)
+            st.markdown(details_html, unsafe_allow_html=True)
+        else:
+            col_imgs, col_details = st.columns([1.15, 1.0], gap="large")
+            with col_imgs:
+                c_orig, c_cam = st.columns(2, gap="small")
+                with c_orig:
+                    st.caption("Original Drawing")
+                    st.image(img_pil, use_container_width=True)
+                with c_cam:
+                    st.caption("Where AI Focused (Grad-CAM)")
+                    st.image(overlay_pil, use_container_width=True)
+                st.markdown(legend_html, unsafe_allow_html=True)
+            with col_details:
+                st.markdown(details_html, unsafe_allow_html=True)
 
 
 def render_screening_tab(model, conv_model, gap, head) -> None:
@@ -878,8 +938,61 @@ def render_screening_tab(model, conv_model, gap, head) -> None:
             unsafe_allow_html=True,
         )
 
-    for idx, (fname, img_pil, overlay_pil, prob) in enumerate(results, start=1):
-        render_result_card(idx, fname, img_pil, overlay_pil, prob)
+        f_col, v_col = st.columns([2.2, 1.0], gap="medium")
+        with f_col:
+            filter_choice = st.radio(
+                "Filter results",
+                options=[
+                    f"All ({len(results)})",
+                    f"Parkinson-like ({n_parkinson})",
+                    f"Borderline ({n_unsure})",
+                    f"Healthy-like ({n_healthy})",
+                ],
+                horizontal=True,
+                label_visibility="collapsed",
+            )
+        with v_col:
+            view_mode = st.radio(
+                "Layout",
+                options=["2-Column Grid", "Full-Width Rows"],
+                horizontal=True,
+                label_visibility="collapsed",
+            )
+
+        indexed_results = list(enumerate(results, start=1))
+        if filter_choice.startswith("Parkinson-like"):
+            filtered = [(i, item) for i, item in indexed_results if item[3] >= INCONCLUSIVE_HIGH]
+        elif filter_choice.startswith("Borderline"):
+            filtered = [
+                (i, item)
+                for i, item in indexed_results
+                if INCONCLUSIVE_LOW <= item[3] < INCONCLUSIVE_HIGH
+            ]
+        elif filter_choice.startswith("Healthy-like"):
+            filtered = [(i, item) for i, item in indexed_results if item[3] < INCONCLUSIVE_LOW]
+        else:
+            filtered = indexed_results
+
+        if not filtered:
+            st.info("No drawings match this filter.")
+            return
+
+        if view_mode == "2-Column Grid" and len(filtered) > 1:
+            for row_start in range(0, len(filtered), 2):
+                cols = st.columns(2, gap="medium")
+                for col, (orig_idx, (fname, img_pil, overlay_pil, prob)) in zip(
+                    cols, filtered[row_start : row_start + 2]
+                ):
+                    with col:
+                        render_result_card(
+                            orig_idx, fname, img_pil, overlay_pil, prob, compact=True
+                        )
+        else:
+            for orig_idx, (fname, img_pil, overlay_pil, prob) in filtered:
+                render_result_card(orig_idx, fname, img_pil, overlay_pil, prob, compact=False)
+    else:
+        fname, img_pil, overlay_pil, prob = results[0]
+        render_result_card(1, fname, img_pil, overlay_pil, prob, compact=False)
 
 
 def render_benchmarks_tab() -> None:
