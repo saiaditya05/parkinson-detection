@@ -212,6 +212,7 @@ MODEL_BENCHMARKS = [
         "name": "VGG16 (Active Model)",
         "tag": "Best Overall",
         "test_acc": 81.7,
+        "precision": 78.8,
         "recall": 86.7,
         "f1": 82.5,
         "specificity": 76.7,
@@ -222,6 +223,7 @@ MODEL_BENCHMARKS = [
         "name": "VGG16 + ResNet50 Ensemble",
         "tag": "Runner-up",
         "test_acc": 80.0,
+        "precision": None,
         "recall": 80.0,
         "f1": 80.0,
         "specificity": None,
@@ -232,6 +234,7 @@ MODEL_BENCHMARKS = [
         "name": "ResNet50 (Fine-tuned)",
         "tag": "Pretrained",
         "test_acc": 75.0,
+        "precision": 75.9,
         "recall": 73.3,
         "f1": 74.6,
         "specificity": 76.7,
@@ -242,6 +245,7 @@ MODEL_BENCHMARKS = [
         "name": "Custom CNN (From Scratch)",
         "tag": "Baseline",
         "test_acc": 50.0,
+        "precision": 0.0,
         "recall": 0.0,
         "f1": 0.0,
         "specificity": 100.0,
@@ -1437,19 +1441,31 @@ def render_benchmarks_tab() -> None:
 <div class="kpi-grid">
   <div class="kpi-card">
     <div class="kpi-val">81.7%</div>
-    <div class="kpi-lbl">Test accuracy on 60 unseen drawings (95% CI: 70%–91.7%)</div>
+    <div class="kpi-lbl">✅ Accuracy — 49 of 60 unseen test drawings correct (95% CI: 70%–91.7%)</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-val">78.8%</div>
+    <div class="kpi-lbl">🎯 Precision — of all drawings flagged as Parkinson, 78.8% were actually Parkinson</div>
   </div>
   <div class="kpi-card">
     <div class="kpi-val">86.7%</div>
-    <div class="kpi-lbl">Parkinson's recall / sensitivity (26 of 30 cases caught)</div>
+    <div class="kpi-lbl">🔍 Recall (Sensitivity) — 26 of 30 Parkinson cases correctly detected</div>
   </div>
   <div class="kpi-card">
-    <div class="kpi-val">0.914</div>
-    <div class="kpi-lbl">ROC-AUC score (1.000 is perfect separation)</div>
+    <div class="kpi-val">82.5%</div>
+    <div class="kpi-lbl">⚖️ F1 Score — balanced measure of Precision + Recall (best single metric)</div>
   </div>
-  <div class="kpi-card">
-    <div class="kpi-val">204</div>
-    <div class="kpi-lbl">Unique drawings (115 train · 29 validation · 60 test)</div>
+</div>
+<div style="margin-bottom:1.1rem;">
+  <div class="kpi-grid" style="grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem;">
+    <div class="kpi-card">
+      <div class="kpi-val" style="font-size:1.5rem;">0.914</div>
+      <div class="kpi-lbl">ROC-AUC score — 1.000 is perfect, 0.5 is random chance</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-val" style="font-size:1.5rem;">204</div>
+      <div class="kpi-lbl">Unique drawings used — 115 train · 29 validation · 60 test</div>
+    </div>
   </div>
 </div>
 """,
@@ -1467,6 +1483,7 @@ def render_benchmarks_tab() -> None:
             active_cls = "active" if m["highlight"] else ""
             bar_color = "var(--accent)" if m["highlight"] else "#64748B"
             spec_str = f"{m['specificity']:.1f}%" if m["specificity"] is not None else "—"
+            prec_str = f"{m['precision']:.1f}%" if m["precision"] is not None else "—"
             st.markdown(
                 f"""
 <div class="bench-row {active_cls}">
@@ -1479,6 +1496,7 @@ def render_benchmarks_tab() -> None:
   </div>
   <div class="bench-metrics">
     <span>Accuracy: <b>{m['test_acc']:.1f}%</b></span>
+    <span>Precision: <b>{prec_str}</b></span>
     <span>Recall: <b>{m['recall']:.1f}%</b></span>
     <span>F1: <b>{m['f1']:.1f}%</b></span>
     <span>Specificity: <b>{spec_str}</b></span>
