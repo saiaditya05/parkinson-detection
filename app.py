@@ -151,7 +151,7 @@ STRINGS = {
         "download_btn": "📄 Download Printable Screening Report (HTML)",
         "disclaimer": (
             "Medical Disclaimer: This application is a deep learning research & educational project "
-            "(Project Cheyali) and is not a certified medical diagnosis. Always consult a neurologist."
+            "(PKD) and is not a certified medical diagnosis. Always consult a neurologist."
         ),
         "warn_badge": "⚠️ Parkinson-like Pattern",
         "unsure_badge": "❓ Borderline / Inconclusive",
@@ -191,7 +191,7 @@ STRINGS = {
         "table_heading": "త్వరిత పోలిక పట్టిక",
         "download_btn": "📄 స్క్రీనింగ్ రిపోర్ట్ డౌన్‌లోడ్ చేయండి (HTML)",
         "disclaimer": (
-            "గమనిక: ఇది కేవలం రీసెర్చ్ మరియు అవగాహన కోసం చేసిన ప్రాజెక్ట్ (Project Cheyali) మాత్రమే — "
+            "గమనిక: ఇది కేవలం రీసెర్చ్ మరియు అవగాహన కోసం చేసిన ప్రాజెక్ట్ (PKD) మాత్రమే — "
             "వైద్య నిర్ధారణ కాదు. ఏదైనా ఆరోగ్య సందేహం ఉంటే న్యూరాలజిస్ట్‌ను సంప్రదించండి."
         ),
         "warn_badge": "⚠️ పార్కిన్సన్ తరహా లక్షణాలు",
@@ -1137,7 +1137,7 @@ def render_top_controls() -> tuple[str, str]:
         st.session_state["theme_idx"] = list(THEMES.keys()).index(theme_choice)
 
         st.markdown("---")
-        st.caption("Project Cheyali · VGG16 + Grad-CAM")
+        st.caption("PKD · VGG16 + Grad-CAM")
 
     lang = "te" if lang_choice.startswith("తెలుగు") else "en"
     return lang, theme_choice
@@ -1615,7 +1615,7 @@ def main() -> None:
     # Top brand bar
     st.markdown(
         "<div style='font-weight:800;font-size:1.1rem;margin-bottom:0.6rem;'>"
-        "🌀 Project Cheyali "
+        "🌀 PKD "
         "<span style='font-weight:500;opacity:0.65;font-size:0.9rem;'>· Parkinson's AI Drawing Screening</span>"
         "</div>",
         unsafe_allow_html=True,
@@ -1637,7 +1637,7 @@ def main() -> None:
         f"""
 <div class="medical-banner">{s['disclaimer']}</div>
 <div class="app-footer">
-  Project Cheyali · Dataset: Kaggle Parkinson's Drawings (204 unique images) · Model: Fine-tuned VGG16 + Grad-CAM
+  PKD · Dataset: Kaggle Parkinson's Drawings (204 unique images) · Model: Fine-tuned VGG16 + Grad-CAM
 </div>
 """,
         unsafe_allow_html=True,
