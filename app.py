@@ -258,7 +258,7 @@ st.set_page_config(
     page_title="Parkinson's Drawing Screening",
     page_icon="🌀",
     layout="wide",
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="expanded",
 )
 
 
@@ -296,10 +296,39 @@ def inject_styles(theme_name: str) -> None:
     --track: {t["track"]};
 }}
 
-html, body, .stApp, [data-testid="stAppViewContainer"], [data-testid="stApp"] {{
+html, body, .stApp, [data-testid="stAppViewContainer"], [data-testid="stApp"],
+[data-testid="stAppViewContainer"] > .main,
+[data-testid="stAppViewContainer"] > section {{
     background-color: var(--bg) !important;
     color: var(--text) !important;
     font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+}}
+
+/* Sidebar theming */
+[data-testid="stSidebar"] {{
+    background-color: var(--surface) !important;
+    border-right: 1px solid var(--border) !important;
+}}
+[data-testid="stSidebar"] * {{
+    color: var(--text) !important;
+}}
+[data-testid="stSidebar"] .stRadio > div {{
+    gap: 0.35rem !important;
+}}
+[data-testid="stSidebar"] [data-testid="stWidgetLabel"] p {{
+    color: var(--muted) !important;
+    font-weight: 700 !important;
+    font-size: 0.82rem !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.04em !important;
+}}
+[data-testid="stSidebar"] [data-testid="stRadio"] label div p {{
+    font-size: 0.9rem !important;
+    font-weight: 500 !important;
+}}
+[data-testid="stSidebarCollapseButton"] {{
+    background: var(--surface) !important;
+    border: 1px solid var(--border) !important;
 }}
 
 #MainMenu, footer {{ visibility: hidden; }}
@@ -1088,27 +1117,28 @@ def build_html_report(results: list, lang: str) -> str:
 
 
 def render_top_controls() -> tuple[str, str]:
-    """Render top theme and language selectors cleanly across full width."""
-    c_brand, c_lang, c_theme = st.columns([2.4, 1.0, 1.3], gap="medium")
-    with c_brand:
-        st.markdown(
-            "<div style='padding-top:0.35rem;font-weight:800;font-size:1.05rem;'>"
-            "🌀 Project Cheyali <span style='font-weight:500;opacity:0.7;'>· Clinical AI Drawing Screening</span></div>",
-            unsafe_allow_html=True,
-        )
-    with c_lang:
-        lang_choice = st.selectbox(
-            "Language",
+    """Render theme and language selectors using sidebar so CSS applies before page content."""
+    with st.sidebar:
+        st.markdown("### ⚙️ Settings")
+        lang_choice = st.radio(
+            "🌐 Language",
             options=["English", "తెలుగు (Telugu)"],
-            label_visibility="collapsed",
+            index=st.session_state.get("lang_idx", 0),
+            key="lang_radio",
         )
-    with c_theme:
-        theme_choice = st.selectbox(
-            "UI Theme",
+        st.session_state["lang_idx"] = 0 if lang_choice == "English" else 1
+
+        theme_choice = st.radio(
+            "🎨 UI Theme",
             options=list(THEMES.keys()),
-            index=0,
-            label_visibility="collapsed",
+            index=st.session_state.get("theme_idx", 0),
+            key="theme_radio",
         )
+        st.session_state["theme_idx"] = list(THEMES.keys()).index(theme_choice)
+
+        st.markdown("---")
+        st.caption("Project Cheyali · VGG16 + Grad-CAM")
+
     lang = "te" if lang_choice.startswith("తెలుగు") else "en"
     return lang, theme_choice
 
@@ -1566,8 +1596,31 @@ def render_guide_tab() -> None:
 
 
 def main() -> None:
+    # Initialise session state defaults so CSS is ready before any widget renders
+    if "lang_idx" not in st.session_state:
+        st.session_state["lang_idx"] = 0
+    if "theme_idx" not in st.session_state:
+        st.session_state["theme_idx"] = 0
+
+    # Inject CSS first (uses session state so theme is correct on first render)
+    default_theme = list(THEMES.keys())[st.session_state["theme_idx"]]
+    inject_styles(default_theme)
+
     lang, theme_name = render_top_controls()
-    inject_styles(theme_name)
+
+    # Re-inject if user just changed the theme (second pass, same frame)
+    if theme_name != default_theme:
+        inject_styles(theme_name)
+
+    # Top brand bar
+    st.markdown(
+        "<div style='font-weight:800;font-size:1.1rem;margin-bottom:0.6rem;'>"
+        "🌀 Project Cheyali "
+        "<span style='font-weight:500;opacity:0.65;font-size:0.9rem;'>· Parkinson's AI Drawing Screening</span>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
     load_model()
     render_hero(lang)
 
