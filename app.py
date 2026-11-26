@@ -124,7 +124,7 @@ THEMES = {
 
 STRINGS = {
     "en": {
-        "badge": "🌀 AI Screening Aid · VGG16 + Grad-CAM Explainability",
+        "badge": "🧠 AI Screening Aid · VGG16 + Grad-CAM Explainability",
         "title": "Parkinson's Disease Drawing Screening",
         "subtitle": (
             "Upload multiple hand-drawn spiral or wave images—or scan live with your camera. "
@@ -165,7 +165,7 @@ STRINGS = {
         "cam_cap": "Where AI Focused (Grad-CAM)",
     },
     "te": {
-        "badge": "🌀 AI స్క్రీనింగ్ సహాయం · VGG16 + Grad-CAM విశ్లేషణ",
+        "badge": "🧠 AI స్క్రీనింగ్ సహాయం · VGG16 + Grad-CAM విశ్లేషణ",
         "title": "పార్కిన్సన్ వ్యాధి డ్రాయింగ్ స్క్రీనింగ్",
         "subtitle": (
             "మీరు గీసిన స్పైరల్ లేదా వేవ్ చిత్రాలను ఒకేసారి ఎక్కువ సంఖ్యలో అప్‌లోడ్ చేయండి లేదా కెమెరాతో స్కాన్ చేయండి. "
@@ -256,7 +256,7 @@ MODEL_BENCHMARKS = [
 
 st.set_page_config(
     page_title="Parkinson's Drawing Screening",
-    page_icon="🌀",
+    page_icon="🧠",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -1303,7 +1303,7 @@ def render_screening_tab(lang: str, theme_name: str) -> None:
             st.markdown(
                 f"""
 <div class="empty-panel">
-  <div class="empty-icon">🌀</div>
+  <div class="empty-icon">🧠</div>
   <div class="empty-title">{s['empty_title']}</div>
   <div class="empty-sub">{s['empty_sub']}</div>
   <div class="tips-grid">
@@ -1615,7 +1615,7 @@ def main() -> None:
     # Top brand bar
     st.markdown(
         "<div style='font-weight:800;font-size:1.1rem;margin-bottom:0.6rem;'>"
-        "🌀 PKD "
+        "🧠 PKD "
         "<span style='font-weight:500;opacity:0.65;font-size:0.9rem;'>· Parkinson's AI Drawing Screening</span>"
         "</div>",
         unsafe_allow_html=True,
