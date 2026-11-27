@@ -3,3 +3,4 @@ streamlit
 pillow
 numpy
 huggingface_hub
+onnxruntime
