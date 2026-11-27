@@ -5,6 +5,7 @@ import io
 from datetime import datetime
 
 import numpy as np
+import onnxruntime as ort
 import streamlit as st
 import tensorflow as tf
 from huggingface_hub import hf_hub_download
@@ -18,6 +19,17 @@ IMG = 224
 INCONCLUSIVE_LOW = 0.35
 INCONCLUSIVE_HIGH = 0.65
 HIGH_RISK_THRESHOLD = 0.85
+HF_REPO = "saiaditya05/cheyali-vgg16"
+YOLO_FILE = "yolov8n-cls.onnx"
+MODEL_LABELS = {
+    "vgg": "VGG16 + Grad-CAM heatmap",
+    "yolo": "YOLOv8n-cls (lightweight)",
+}
+MODEL_ACC = {"vgg": "81.7%", "yolo": "85.0%"}
+
+
+def active_model() -> str:
+    return st.session_state.get("model_key", "vgg")
 
 THEMES = {
     "Apple Health White": {
@@ -124,7 +136,7 @@ THEMES = {
 
 STRINGS = {
     "en": {
-        "badge": "🧠 AI Screening Aid · VGG16 + Grad-CAM Explainability",
+        "badge": "🧠 AI Screening Aid · VGG16 + YOLOv8n-cls · Grad-CAM Explainability",
         "title": "Parkinson's Disease Drawing Screening",
         "subtitle": (
             "Upload multiple hand-drawn spiral or wave images—or scan live with your camera. "
@@ -209,8 +221,19 @@ STRINGS = {
 
 MODEL_BENCHMARKS = [
     {
-        "name": "VGG16 (Active Model)",
-        "tag": "Best Overall",
+        "name": "YOLOv8n-cls (Lightweight)",
+        "tag": "Highest test accuracy",
+        "test_acc": 85.0,
+        "precision": None,
+        "recall": None,
+        "f1": None,
+        "specificity": None,
+        "auc": None,
+        "highlight": False,
+    },
+    {
+        "name": "VGG16 (Fine-tuned)",
+        "tag": "Grad-CAM model",
         "test_acc": 81.7,
         "precision": 78.8,
         "recall": 86.7,
@@ -900,13 +923,38 @@ def assess_image_quality(img_pil: Image.Image) -> tuple[str, str]:
     return "Clear Quality", "Good brightness and stroke contrast."
 
 
+@st.cache_resource(show_spinner="Loading YOLOv8n-cls screening model...")
+def load_yolo():
+    """Load the exported YOLOv8n-cls ONNX model (tiny, runs on CPU with onnxruntime)."""
+    path = hf_hub_download(HF_REPO, YOLO_FILE)
+    sess = ort.InferenceSession(path, providers=["CPUExecutionProvider"])
+    return sess, sess.get_inputs()[0].name
+
+
+def yolo_preprocess(img_pil: Image.Image) -> np.ndarray:
+    """Same preprocessing as Ultralytics classify validation: resize short side to 224, center crop, /255."""
+    resample = getattr(Image, "Resampling", Image).BILINEAR
+    w, h = img_pil.size
+    scale = IMG / min(w, h)
+    img = img_pil.resize((max(IMG, round(w * scale)), max(IMG, round(h * scale))), resample)
+    w, h = img.size
+    left, top = (w - IMG) // 2, (h - IMG) // 2
+    img = img.crop((left, top, left + IMG, top + IMG))
+    arr = np.asarray(img, dtype="float32") / 255.0
+    return arr.transpose(2, 0, 1)[None]
+
+
 @st.cache_data(max_entries=64, show_spinner=False)
-def analyse_image_bytes(image_bytes: bytes) -> tuple[float, np.ndarray, tuple[str, str]]:
-    """Run cached VGG16 prediction + Grad-CAM + quality check keyed by image hash."""
-    model, conv_model, gap, head = load_model()
+def analyse_image_bytes(image_bytes: bytes, model_key: str = "vgg"):
+    """Run cached prediction (+ Grad-CAM for VGG16) + quality check keyed by image hash and model."""
     resample = getattr(Image, "Resampling", Image).BILINEAR
     img_pil = to_rgb_white_bg(Image.open(io.BytesIO(image_bytes)))
     quality = assess_image_quality(img_pil)
+    if model_key == "yolo":
+        sess, in_name = load_yolo()
+        probs = sess.run(None, {in_name: yolo_preprocess(img_pil)})[0][0]
+        return float(probs[1]), None, quality     # class order: healthy=0, parkinson=1
+    model, conv_model, gap, head = load_model()
 
     resized = img_pil.resize((IMG, IMG), resample)
     arr = np.array(resized, dtype="float32")
@@ -978,7 +1026,7 @@ def interpret_probability(prob: float, lang: str) -> dict:
                 "డ్రాయింగ్ గీతలలో వణుకు (tremor), అసమాన దూరం లేదా అకస్మాత్తుగా మారిన మలుపులను AI గుర్తించింది."
             )
             cam_caption = "ఎరుపు/నారింజ రంగులో హైలైట్ అయిన భాగాల్లో పార్కిన్సన్ సంకేతాలు ఎక్కువగా కనిపించాయి."
-            next_step = "ఇది స్క్రీనింగ్ సహాయం మాత్రమే (81.7% ఖచ్చితత్వం). వైద్య నిర్ధారణ కోసం న్యూరాలజిస్ట్‌ను కలవండి."
+            next_step = f"ఇది స్క్రీనింగ్ సహాయం మాత్రమే ({MODEL_ACC[active_model()]} ఖచ్చితత్వం). వైద్య నిర్ధారణ కోసం న్యూరాలజిస్ట్‌ను కలవండి."
         else:
             risk = "High Likelihood" if prob >= HIGH_RISK_THRESHOLD else "Moderate-High Likelihood"
             meaning = (
@@ -989,7 +1037,7 @@ def interpret_probability(prob: float, lang: str) -> dict:
                 "Highlighted red & orange areas show the exact strokes where Parkinson-like cues were detected."
             )
             next_step = (
-                "As an AI screening aid (81.7% test accuracy), consider sharing this result with a neurologist."
+                f"As an AI screening aid ({MODEL_ACC[active_model()]} test accuracy), consider sharing this result with a neurologist."
             )
         return {
             "css": "warn",
@@ -1076,12 +1124,21 @@ def pil_to_b64(img_pil: Image.Image, max_dim: int = 280) -> str:
 def build_html_report(results: list, lang: str) -> str:
     """Generate a self-contained printable HTML screening report."""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+    if active_model() == "yolo":
+        model_line = "YOLOv8n-cls (Test Accuracy: 85.0%)"
+    else:
+        model_line = "Fine-tuned VGG16 + Grad-CAM (Test Accuracy: 81.7%, AUC: 0.914)"
     cards_html = []
     for idx, item in enumerate(results, start=1):
         info = interpret_probability(item["prob"], lang)
         orig_b64 = pil_to_b64(item["orig"])
-        cam_b64 = pil_to_b64(item["overlay"])
+        cam_b64 = pil_to_b64(item["overlay"]) if item["overlay"] is not None else None
         safe_name = html.escape(item["name"])
+        cam_block = (
+            f'<div><div style="font-size:12px;color:#64748b;">Where AI Focused (Grad-CAM)</div>'
+            f'<img src="data:image/png;base64,{cam_b64}" style="width:190px;border-radius:8px;border:1px solid #e2e8f0;"/></div>'
+            if cam_b64 else ""
+        )
         cards_html.append(
             f"""
 <div style="border:1px solid #cbd5e1;border-radius:12px;padding:16px;margin-bottom:16px;page-break-inside:avoid;">
@@ -1092,8 +1149,7 @@ def build_html_report(results: list, lang: str) -> str:
   <div style="display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap;">
     <div><div style="font-size:12px;color:#64748b;">Original</div>
       <img src="data:image/png;base64,{orig_b64}" style="width:190px;border-radius:8px;border:1px solid #e2e8f0;"/></div>
-    <div><div style="font-size:12px;color:#64748b;">Where AI Focused (Grad-CAM)</div>
-      <img src="data:image/png;base64,{cam_b64}" style="width:190px;border-radius:8px;border:1px solid #e2e8f0;"/></div>
+    {cam_block}
     <div style="flex:1;min-width:220px;font-size:14px;line-height:1.5;">
       <p><b>Risk Level:</b> {info['risk']} | <b>Image Quality:</b> {html.escape(item['quality'][0])}</p>
       <p><b>Meaning:</b> {info['meaning']}</p>
@@ -1109,7 +1165,7 @@ def build_html_report(results: list, lang: str) -> str:
 <style>body{{font-family:system-ui,-apple-system,sans-serif;max-width:900px;margin:24px auto;padding:0 16px;color:#0f172a;}}</style>
 </head><body>
 <h2>Parkinson's Disease Drawing Screening Report</h2>
-<p style="color:#475569;">Generated: {timestamp} · Model: Fine-tuned VGG16 + Grad-CAM (Test Accuracy: 81.7%, AUC: 0.914)</p>
+<p style="color:#475569;">Generated: {timestamp} · Model: {model_line}</p>
 <hr style="border:none;border-top:1px solid #e2e8f0;margin:16px 0;"/>
 {''.join(cards_html)}
 <p style="font-size:12px;color:#64748b;margin-top:20px;">{STRINGS[lang]['disclaimer']}</p>
@@ -1128,6 +1184,16 @@ def render_top_controls() -> tuple[str, str]:
         )
         st.session_state["lang_idx"] = 0 if lang_choice == "English" else 1
 
+        model_labels = list(MODEL_LABELS.values())
+        model_choice = st.radio(
+            "🤖 AI Model",
+            options=model_labels,
+            index=st.session_state.get("model_idx", 0),
+            key="model_radio",
+        )
+        st.session_state["model_idx"] = model_labels.index(model_choice)
+        st.session_state["model_key"] = "vgg" if st.session_state["model_idx"] == 0 else "yolo"
+
         theme_choice = st.radio(
             "🎨 UI Theme",
             options=list(THEMES.keys()),
@@ -1137,7 +1203,7 @@ def render_top_controls() -> tuple[str, str]:
         st.session_state["theme_idx"] = list(THEMES.keys()).index(theme_choice)
 
         st.markdown("---")
-        st.caption("PKD · VGG16 + Grad-CAM")
+        st.caption("PKD · VGG16 + YOLOv8n-cls")
 
     lang = "te" if lang_choice.startswith("తెలుగు") else "en"
     return lang, theme_choice
@@ -1231,20 +1297,13 @@ def render_result_card(
             unsafe_allow_html=True,
         )
 
+        no_cam = item["overlay"] is None
         if compact:
-            c_orig, c_cam = st.columns(2, gap="small")
-            with c_orig:
+            if no_cam:
                 st.caption(s["orig_cap"])
                 st.image(item["orig"], use_container_width=True)
-            with c_cam:
-                st.caption(s["cam_cap"])
-                st.image(item["overlay"], use_container_width=True)
-            st.markdown(legend_html, unsafe_allow_html=True)
-            st.markdown("<div style='height:0.45rem'></div>", unsafe_allow_html=True)
-            st.markdown(details_html, unsafe_allow_html=True)
-        else:
-            col_imgs, col_details = st.columns([1.1, 1.0], gap="large")
-            with col_imgs:
+                st.caption("Heatmap is available with the VGG16 model (choose it in the sidebar).")
+            else:
                 c_orig, c_cam = st.columns(2, gap="small")
                 with c_orig:
                     st.caption(s["orig_cap"])
@@ -1253,6 +1312,24 @@ def render_result_card(
                     st.caption(s["cam_cap"])
                     st.image(item["overlay"], use_container_width=True)
                 st.markdown(legend_html, unsafe_allow_html=True)
+            st.markdown("<div style='height:0.45rem'></div>", unsafe_allow_html=True)
+            st.markdown(details_html, unsafe_allow_html=True)
+        else:
+            col_imgs, col_details = st.columns([1.1, 1.0], gap="large")
+            with col_imgs:
+                if no_cam:
+                    st.caption(s["orig_cap"])
+                    st.image(item["orig"], use_container_width=True)
+                    st.caption("Heatmap is available with the VGG16 model (choose it in the sidebar).")
+                else:
+                    c_orig, c_cam = st.columns(2, gap="small")
+                    with c_orig:
+                        st.caption(s["orig_cap"])
+                        st.image(item["orig"], use_container_width=True)
+                    with c_cam:
+                        st.caption(s["cam_cap"])
+                        st.image(item["overlay"], use_container_width=True)
+                    st.markdown(legend_html, unsafe_allow_html=True)
             with col_details:
                 st.markdown(details_html, unsafe_allow_html=True)
 
@@ -1260,6 +1337,7 @@ def render_result_card(
 def render_screening_tab(lang: str, theme_name: str) -> None:
     """Render full-page split workspace: Left input controls, Right live results."""
     s = STRINGS[lang]
+    model_key = active_model()
     left_panel, right_panel = st.columns([0.92, 2.08], gap="large")
 
     raw_inputs = []
@@ -1290,13 +1368,15 @@ def render_screening_tab(lang: str, theme_name: str) -> None:
                 if cam_photo is not None:
                     raw_inputs.append(("camera_scan.jpg", cam_photo.getvalue()))
 
-            heatmap_strength = st.slider(
-                s["heatmap_lbl"],
-                min_value=0.25,
-                max_value=0.85,
-                value=0.62,
-                step=0.05,
-            )
+            heatmap_strength = 0.62
+            if model_key == "vgg":
+                heatmap_strength = st.slider(
+                    s["heatmap_lbl"],
+                    min_value=0.25,
+                    max_value=0.85,
+                    value=0.62,
+                    step=0.05,
+                )
 
     if not raw_inputs:
         with right_panel:
@@ -1337,8 +1417,12 @@ def render_screening_tab(lang: str, theme_name: str) -> None:
             try:
                 img_pil = to_rgb_white_bg(Image.open(io.BytesIO(img_bytes)))
                 img_pil.thumbnail((900, 900), resample)
-                prob, cam, quality = analyse_image_bytes(img_bytes)
-                overlay_pil = render_gradcam_overlay(img_pil, cam, max_alpha=heatmap_strength)
+                prob, cam, quality = analyse_image_bytes(img_bytes, model_key)
+                overlay_pil = (
+                    render_gradcam_overlay(img_pil, cam, max_alpha=heatmap_strength)
+                    if cam is not None
+                    else None
+                )
                 results.append(
                     {
                         "name": fname,
@@ -1468,6 +1552,7 @@ def render_benchmarks_tab() -> None:
     """Render model comparison metrics and confusion matrix from Parkinson.ipynb."""
     st.markdown(
         """
+<div class="section-caption">Detailed metrics for the VGG16 model</div>
 <div class="kpi-grid">
   <div class="kpi-card">
     <div class="kpi-val">81.7%</div>
@@ -1506,12 +1591,18 @@ def render_benchmarks_tab() -> None:
     with col_list:
         st.markdown(
             '<div class="section-heading">Model Comparison on Unseen Test Set (60 Images)</div>'
-            '<div class="section-caption">Why VGG16 was chosen over Custom CNN, ResNet50, and Ensemble.</div>',
+            '<div class="section-caption">All models compared on the same 60 unseen test drawings.</div>',
             unsafe_allow_html=True,
         )
         for m in MODEL_BENCHMARKS:
-            active_cls = "active" if m["highlight"] else ""
-            bar_color = "var(--accent)" if m["highlight"] else "#64748B"
+            is_active = (m["name"].startswith("VGG16 (") and active_model() == "vgg") or (
+                m["name"].startswith("YOLO") and active_model() == "yolo"
+            )
+            active_cls = "active" if is_active else ""
+            bar_color = "var(--accent)" if is_active else "#64748B"
+            rec_str = f"{m['recall']:.1f}%" if m["recall"] is not None else "—"
+            f1_str = f"{m['f1']:.1f}%" if m["f1"] is not None else "—"
+            auc_str = f"{m['auc']:.3f}" if m["auc"] is not None else "—"
             spec_str = f"{m['specificity']:.1f}%" if m["specificity"] is not None else "—"
             prec_str = f"{m['precision']:.1f}%" if m["precision"] is not None else "—"
             st.markdown(
@@ -1527,10 +1618,10 @@ def render_benchmarks_tab() -> None:
   <div class="bench-metrics">
     <span>Accuracy: <b>{m['test_acc']:.1f}%</b></span>
     <span>Precision: <b>{prec_str}</b></span>
-    <span>Recall: <b>{m['recall']:.1f}%</b></span>
-    <span>F1: <b>{m['f1']:.1f}%</b></span>
+    <span>Recall: <b>{rec_str}</b></span>
+    <span>F1: <b>{f1_str}</b></span>
     <span>Specificity: <b>{spec_str}</b></span>
-    <span>AUC: <b>{m['auc']:.3f}</b></span>
+    <span>AUC: <b>{auc_str}</b></span>
   </div>
 </div>
 """,
@@ -1553,8 +1644,8 @@ def render_benchmarks_tab() -> None:
   <div class="cm-cell good"><div class="cm-num">26</div><div class="cm-cap">True Parkinson<br>(Correct)</div></div>
 </div>
 <div class="explain-box" style="margin-top:0.95rem;">
-  <b>Key Takeaway:</b> Fine-tuned <b>VGG16</b> achieved the highest sensitivity (<b>86.7%</b>) and F1 score
-  (<b>82.5%</b>), missing only 4 out of 30 Parkinson cases while training from scratch collapsed to 50%.
+  <b>Key Takeaway:</b> <b>YOLOv8n-cls</b> scored 85.0% (51/60) and <b>VGG16</b> 81.7% (49/60). On only 60 test
+  images this 2-image gap is within noise (the confidence ranges overlap), while training a CNN from scratch collapsed to 50%.
 </div>
 """,
                 unsafe_allow_html=True,
@@ -1588,7 +1679,7 @@ def render_guide_tab() -> None:
             st.markdown(
                 """
 - **Small Research Dataset:** Trained on **204 unique drawings** (115 train, 29 validation, 60 test). Different pens, ruled paper, or shadows may lower reliability.
-- **Confidence Range:** Test accuracy is **81.7%** (95% CI: **70.0%–91.7%**). Scores between **35% and 65%** are marked **Borderline / Inconclusive**.
+- **Confidence Range:** Test accuracy is **81.7%** for VGG16 (95% CI: **70.0%–91.7%**) and **85.0%** for YOLOv8n-cls on the same 60 images. Scores between **35% and 65%** are marked **Borderline / Inconclusive**.
 - **Domain Scope:** Only spiral and wave drawings are valid inputs; unrelated images produce meaningless outputs.
 - **Not a Medical Diagnosis:** Built strictly for research &amp; education. Always consult a qualified neurologist.
 """
@@ -1621,7 +1712,10 @@ def main() -> None:
         unsafe_allow_html=True,
     )
 
-    load_model()
+    if active_model() == "yolo":
+        load_yolo()
+    else:
+        load_model()
     render_hero(lang)
 
     s = STRINGS[lang]
